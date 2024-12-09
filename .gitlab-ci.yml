@@ -1,0 +1,91 @@
+variables:
+  #nginx下的文件夹名称（项目名最好）
+  APP_NAME: uwell-data-reporte-system-web
+  #相对路径
+  #需要更新的文件列表
+  SCP_FILES:  ./dist/*
+#阶段定义
+stages:
+  - build
+  - deploy
+#job
+build:
+  stage: build
+  tags:
+    - uwell-back-build
+  # 触发规则
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      variables:
+        SERVER_PATH: 10.10.68.204
+        NPM_PARAM: builddev
+    - if: $CI_COMMIT_BRANCH == "test"
+      variables:
+        SERVER_PATH: 10.10.68.207
+        NPM_PARAM: buildtest
+  script:
+    - echo "================== npm install ================"
+    - npm install
+    - npm install vue@2.7.16
+    - echo "================== npm build ================"
+    - npm run build
+  # after_script:
+  #   - tar -zcvf node_modules.tar.gz node_modules/
+  artifacts:
+    paths:
+      - dist
+      # - node_modules.tar.gz
+    when: 'on_success'
+#部署前准备 备份文件
+pre-deploy:
+  stage: deploy
+  tags:
+    - uwell-back-build
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      variables:
+        SERVER_PATH: 10.10.68.204
+    - if: $CI_COMMIT_BRANCH == "test"
+      variables:
+        SERVER_PATH: 10.10.68.207
+  script:
+    - echo "================== project backup ================"
+    - ssh root@${SERVER_PATH} 'bash -s' < /home/gitlab-runner/front-project-bak.sh $APP_NAME
+#如果package.json文件更新 则更新node_modules模块
+# node_modules_deploy:
+#   stage: deploy
+#   dependencies:
+#     - build
+#   tags:
+#     - uwell-back-build
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == "dev"
+#       variables:
+#         SERVER_PATH: 10.10.68.204
+#     - if: $CI_COMMIT_BRANCH == "test"
+#       variables:
+#         SERVER_PATH: 10.10.68.207
+#     - changes:
+#         - package.json
+#   script:
+#     - echo "================ node modules =================="
+#     - scp -r node_modules.tar.gz root@${SERVER_PATH}:/home/docker/mount/nginx/uwell-project/$APP_NAME
+#部署阶段
+deploy:
+  stage: deploy
+  dependencies:
+    - build
+  tags:
+    - uwell-back-build
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      variables:
+        SERVER_PATH: 10.10.68.204
+    - if: $CI_COMMIT_BRANCH == "test"
+      variables:
+        SERVER_PATH: 10.10.68.207
+  script:
+    - echo "================== project deploy ================"
+    - scp -r $SCP_FILES root@${SERVER_PATH}:/home/docker/mount/nginx/uwell-project/$APP_NAME
+  after_script:
+    - ssh root@10.10.68.204 'bash -s' < /home/gitlab-runner/front-project-node-modules.sh $APP_NAME
